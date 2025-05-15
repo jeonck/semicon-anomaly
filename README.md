@@ -244,5 +244,3 @@ MIT 라이센스
 5. Pull Request를 생성하세요
 
 
-# semicon-anomaly
-# semicon-anomaly
