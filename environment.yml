@@ -1,0 +1,19 @@
+name: anomaly-detection
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - pip
+  - numpy
+  - pandas
+  - scikit-learn
+  - pytorch
+  - plotly
+  - pip:
+    - starlette==0.34.0
+    - uvicorn==0.27.1
+    - python-multipart==0.0.7
+    - jinja2==3.1.3
+    - momentfm>=0.1.4

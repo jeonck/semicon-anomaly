@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  anomaly-detection:
+    build: .
+    container_name: anomaly-detection-app
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - PYTHONUNBUFFERED=1
+      # Set to 'cpu' if no GPU available
+      - DEVICE=cpu
+    restart: unless-stopped
+    # Uncomment for GPU support with NVIDIA Container Toolkit
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]

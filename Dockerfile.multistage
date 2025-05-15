@@ -1,0 +1,83 @@
+# docker build -t anomaly-detection-app:local -f Dockerfile.multistage .    
+
+# Build stage
+FROM python:3.11-slim AS builder
+
+WORKDIR /app
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv and debug the installation
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+RUN echo "Installation complete, checking paths"
+RUN ls -la /root || echo "No .uv in /root"
+RUN ls -la /root/.uv || echo "No .uv directory in /root"
+RUN ls -la /root/.uv/bin || echo "No bin directory in /root/.uv"
+RUN ls -la /usr/local/bin || echo "No uv in /usr/local/bin"
+RUN find / -name uv -type f 2>/dev/null || echo "uv executable not found in filesystem"
+RUN echo "PATH=$PATH"
+
+# Manually add the uv binary to PATH if it was installed at the expected location
+ENV PATH="/root/.uv/bin:/root/.cargo/bin:/usr/local/bin:${PATH}"
+RUN which uv || echo "uv still not in PATH after setting ENV"
+
+# If uv is still not found, fall back to pip
+RUN which uv && uv --version || echo "Will use standard pip instead"
+
+# Copy requirements
+COPY requirements.txt .
+
+# Create virtual environment
+RUN python -m venv .venv
+
+# Try using uv if available, otherwise fall back to standard pip
+RUN . .venv/bin/activate && \
+    if command -v uv >/dev/null 2>&1; then \
+        echo "Using uv for package installation" && \
+        uv pip install --no-cache-dir -r requirements.txt; \
+    else \
+        echo "Falling back to standard pip" && \
+        pip install --no-cache-dir --upgrade pip && \
+        pip install --no-cache-dir -r requirements.txt; \
+    fi
+
+# Runtime stage
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy virtual environment from builder
+COPY --from=builder /app/.venv /app/.venv
+ENV PATH="/app/.venv/bin:$PATH"
+
+# Copy application files
+COPY . .
+
+# Create a non-root user
+RUN useradd -m appuser && chown -R appuser:appuser /app
+USER appuser
+
+# Ensure data directory exists
+RUN mkdir -p /app/data && chown -R appuser:appuser /app/data
+
+# Set environment variables
+ENV PYTHONPATH=/app \
+    PYTHONUNBUFFERED=1 \
+    DEVICE=cpu
+
+# Expose port 5000
+EXPOSE 5000
+
+# Run the application
+CMD ["python", "app.py"]

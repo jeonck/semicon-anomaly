@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>반도체 공정 이상치 탐지 시스템 - MOMENT 모델 적용</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/boxicons@2.1.4/css/boxicons.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}">
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
+</head>
+<body>
+    <header class="app-header">
+        <div class="container text-center">
+            <h1 class="app-title">반도체 공정 이상치 탐지 시스템</h1>
+            <p class="app-subtitle">MOMENT 시계열 파운데이션 모델을 활용한 실시간 데이터 분석</p>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="row g-4">
+            <!-- 왼쪽 설정 패널 -->
+            <div class="col-lg-4 col-md-5">
+                <div class="card mb-4">
+                    <div class="card-header bg-primary">
+                        <div class="d-flex align-items-center">
+                            <i class='bx bx-radar me-2' style="font-size: 1.5rem;"></i>
+                            <h5 class="mb-0">이상치 탐지 설정</h5>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <form id="detectForm">
+                            <div class="mb-4">
+                                <label for="features" class="form-label">분석할 특성 선택</label>
+                                <select multiple class="form-select" id="features" name="features[]" size="5" required>
+                                    {% for feature in numeric_features %}
+                                        {% if feature != '이상여부' and feature != '예측_이상여부' %}
+                                            <option value="{{ feature }}">{{ feature }}</option>
+                                        {% endif %}
+                                    {% endfor %}
+                                </select>
+                                <div class="form-text mt-2"><i class='bx bx-info-circle'></i> Ctrl 키를 누른 상태로 여러 특성을 선택할 수 있습니다.</div>
+                            </div>
+                            
+                            <div class="mb-4">
+                                <label for="contamination" class="form-label">이상치 비율 예상치</label>
+                                <div class="d-flex align-items-center">
+                                    <i class='bx bx-slider-alt fs-4 me-2 text-primary'></i>
+                                    <input type="range" class="form-range" id="contamination" name="contamination" 
+                                           min="0.01" max="0.2" step="0.01" value="0.05">
+                                </div>
+                                <div class="d-flex justify-content-between mt-1">
+                                    <span class="text-muted small">1%</span>
+                                    <span id="contaminationValue" class="fw-bold text-primary">5%</span>
+                                    <span class="text-muted small">20%</span>
+                                </div>
+                            </div>
+                            
+                            <div class="form-group mb-4">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="use_moment" name="use_moment" value="true" checked>
+                                    <label class="form-check-label" for="use_moment">
+                                        MOMENT 모델 사용
+                                    </label>
+                                </div>
+                                <small class="form-text text-muted d-block mt-1">
+                                    <i class='bx bx-info-circle'></i> MOMENT는 시계열 파운데이션 모델로, 복잡한 패턴을 더 잘 감지합니다.
+                                </small>
+                                <div id="modelInfo" class="mt-2">
+                                    <div class="alert alert-info">
+                                        <i class="bx bx-info-circle"></i> MOMENT 모델이 활성화되었습니다. 딥러닝 기반 시계열 파운데이션 모델로, 복잡한 패턴을 더 잘 검출할 수 있습니다.
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="d-grid gap-2">
+                                <button type="submit" class="btn btn-primary d-flex align-items-center justify-content-center">
+                                    <i class='bx bx-search-alt me-2'></i> 이상치 탐지 실행
+                                </button>
+                                <button type="button" id="compareModelsBtn" class="btn btn-secondary d-flex align-items-center justify-content-center">
+                                    <i class='bx bx-git-compare me-2'></i> 모델 성능 비교
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                
+                <div class="card mt-4">
+                    <div class="card-header bg-info">
+                        <div class="d-flex align-items-center">
+                            <i class='bx bx-group me-2' style="font-size: 1.5rem;"></i>
+                            <h5 class="mb-0">그룹별 분석</h5>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <form id="groupAnalysisForm">
+                            <div class="mb-4">
+                                <label for="groupFeature" class="form-label">분석할 특성</label>
+                                <select class="form-select" id="groupFeature" name="feature" required>
+                                    {% for feature in numeric_features %}
+                                        {% if feature != '이상여부' and feature != '예측_이상여부' %}
+                                            <option value="{{ feature }}">{{ feature }}</option>
+                                        {% endif %}
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            
+                            <div class="mb-4">
+                                <label for="groupBy" class="form-label">그룹 기준</label>
+                                <select class="form-select" id="groupBy" name="group_by" required>
+                                    {% for feature in categoric_features %}
+                                        <option value="{{ feature }}">{{ feature }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            
+                            <button type="submit" class="btn btn-info w-100 d-flex align-items-center justify-content-center">
+                                <i class='bx bx-pie-chart-alt-2 me-2'></i> 그룹별 분석 실행
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 오른쪽 결과 패널 -->
+            <div class="col-lg-8 col-md-7">
+                <!-- 로딩 표시 -->
+                <div id="loadingIndicator" class="text-center d-none">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-3 text-primary fw-medium">분석 중입니다...</p>
+                </div>
+                
+                <!-- 결과 요약 패널 -->
+                <div id="resultsPanel" class="d-none">
+                    <div class="card mb-4">
+                        <div class="card-header bg-success">
+                            <div class="d-flex align-items-center">
+                                <i class='bx bx-check-circle me-2' style="font-size: 1.5rem;"></i>
+                                <h5 class="mb-0">이상치 탐지 결과 요약</h5>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="row g-4">
+                                <div class="col-md-6">
+                                    <div class="card bg-light">
+                                        <div class="card-body">
+                                            <div class="d-flex align-items-center mb-3">
+                                                <i class='bx bx-stats fs-4 me-2 text-primary'></i>
+                                                <h5 class="card-title mb-0">이상치 통계</h5>
+                                            </div>
+                                            <ul class="list-group list-group-flush">
+                                                <li class="list-group-item d-flex justify-content-between">
+                                                    <span><i class='bx bx-error-circle me-1 text-danger'></i> 이상치 수:</span>
+                                                    <span id="anomalyCount" class="fw-bold text-danger"></span>
+                                                </li>
+                                                <li class="list-group-item d-flex justify-content-between">
+                                                    <span><i class='bx bx-data me-1 text-info'></i> 전체 데이터 수:</span>
+                                                    <span id="totalCount" class="fw-bold text-info"></span>
+                                                </li>
+                                                <li class="list-group-item d-flex justify-content-between">
+                                                    <span><i class='bx bx-pie-chart me-1 text-primary'></i> 이상치 비율:</span>
+                                                    <span id="anomalyRatio" class="fw-bold text-primary"></span>
+                                                </li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="card bg-light">
+                                        <div class="card-body">
+                                            <div class="d-flex align-items-center mb-3">
+                                                <i class='bx bx-target-lock fs-4 me-2 text-primary'></i>
+                                                <h5 class="card-title mb-0">성능 지표</h5>
+                                            </div>
+                                            <ul class="list-group list-group-flush" id="metricsContainer">
+                                                <li class="list-group-item d-flex justify-content-between">
+                                                    <span><i class='bx bx-bullseye me-1 text-danger'></i> 정밀도 (Precision):</span>
+                                                    <span id="precision" class="fw-bold text-danger"></span>
+                                                </li>
+                                                <li class="list-group-item d-flex justify-content-between">
+                                                    <span><i class='bx bx-receipt me-1 text-success'></i> 재현율 (Recall):</span>
+                                                    <span id="recall" class="fw-bold text-success"></span>
+                                                </li>
+                                                <li class="list-group-item d-flex justify-content-between">
+                                                    <span><i class='bx bx-bar-chart-alt-2 me-1 text-primary'></i> F1 점수:</span>
+                                                    <span id="f1Score" class="fw-bold text-primary"></span>
+                                                </li>
+                                            </ul>
+                                            <div class="mt-3" id="modelInfoList"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 시각화 탭 패널 -->
+                    <div class="card">
+                        <div class="card-header">
+                            <ul class="nav nav-tabs card-header-tabs" id="visualizationTabs" role="tablist">
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link active d-flex align-items-center" id="time-series-tab" data-bs-toggle="tab" 
+                                            data-bs-target="#time-series" type="button" role="tab" aria-selected="true">
+                                        <i class='bx bx-line-chart me-1'></i> 시계열 분석
+                                    </button>
+                                </li>
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link d-flex align-items-center" id="distribution-tab" data-bs-toggle="tab" 
+                                            data-bs-target="#distribution" type="button" role="tab" aria-selected="false">
+                                        <i class='bx bx-bar-chart me-1'></i> 분포 분석
+                                    </button>
+                                </li>
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link d-flex align-items-center" id="correlation-tab" data-bs-toggle="tab" 
+                                            data-bs-target="#correlation" type="button" role="tab" aria-selected="false">
+                                        <i class='bx bx-grid me-1'></i> 상관관계 분석
+                                    </button>
+                                </li>
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link d-flex align-items-center" id="group-tab" data-bs-toggle="tab" 
+                                            data-bs-target="#group" type="button" role="tab" aria-selected="false">
+                                        <i class='bx bx-group me-1'></i> 그룹별 분석
+                                    </button>
+                                </li>
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link d-flex align-items-center" id="anomaly-score-tab" data-bs-toggle="tab" 
+                                            data-bs-target="#anomaly-score" type="button" role="tab" aria-selected="false">
+                                        <i class='bx bx-trending-up me-1'></i> 이상치 점수
+                                    </button>
+                                </li>
+                            </ul>
+                        </div>
+                        <div class="card-body">
+                            <div class="tab-content" id="visualizationTabsContent">
+                                <div class="tab-pane fade show active" id="time-series" role="tabpanel">
+                                    <div id="timeSeriesPlot" style="height: 500px;"></div>
+                                </div>
+                                <div class="tab-pane fade" id="distribution" role="tabpanel">
+                                    <div id="distributionPlot" style="height: 500px;"></div>
+                                </div>
+                                <div class="tab-pane fade" id="correlation" role="tabpanel">
+                                    <div id="heatmapPlot" style="height: 500px;"></div>
+                                </div>
+                                <div class="tab-pane fade" id="group" role="tabpanel">
+                                    <div id="anomalyByFeaturePlot" style="height: 500px;"></div>
+                                </div>
+                                <div class="tab-pane fade" id="anomaly-score" role="tabpanel">
+                                    <div id="anomalyScorePlot" style="height: 500px;"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 그룹별 분석 결과 패널 -->
+                    <div id="groupResultsPanel" class="card mt-4 d-none">
+                        <div class="card-header bg-info">
+                            <div class="d-flex align-items-center">
+                                <i class='bx bx-chart me-2' style="font-size: 1.5rem;"></i>
+                                <h5 class="mb-0">그룹별 분석 결과</h5>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div id="groupTimeSeriesPlot" style="height: 500px;"></div>
+                            
+                            <div class="row mt-4">
+                                <div class="col-md-12">
+                                    <div class="d-flex align-items-center mb-3">
+                                        <i class='bx bx-pie-chart-alt fs-4 me-2 text-primary'></i>
+                                        <h5 class="mb-0">그룹별 이상치 비율</h5>
+                                    </div>
+                                    <div id="groupAnomalyRatios"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 모델 비교 결과 패널 -->
+                    <div id="compareResultsPanel" class="card mt-4 d-none">
+                        <div class="card-header bg-secondary">
+                            <div class="d-flex align-items-center">
+                                <i class='bx bx-git-compare me-2' style="font-size: 1.5rem;"></i>
+                                <h5 class="mb-0">모델 성능 비교 결과</h5>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="alert alert-info">
+                                <i class='bx bx-info-circle me-2'></i>
+                                <strong>MOMENT 모델과 IsolationForest 모델의 성능 비교입니다.</strong><br>
+                                동일한 데이터와 이상치 비율 예상치를 사용하여 두 모델의 성능을 비교합니다.
+                            </div>
+                            
+                            <div id="compareResultsContent"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 푸터 -->
+        <footer class="mt-5 mb-4 text-center text-muted">
+            <div class="row">
+                <div class="col-md-12">
+                    <p class="small">
+                        <i class='bx bx-time-five'></i> 마지막 업데이트: {{ ''|now('Y년 m월 d일') }}
+                    </p>
+                    <p class="small">
+                        <i class='bx bx-code-block'></i> MOMENT 시계열 파운데이션 모델 기반 이상치 탐지 시스템 | 
+                        <i class='bx bx-line-chart'></i> 반도체 공정 데이터 분석
+                    </p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script src="{{ url_for('static', path='js/main.js') }}"></script>
+</body>
+</html>
